@@ -18,6 +18,7 @@ data "aws_caller_identity" "current" {}
 locals {
   name_prefix = var.project_name
   api_fqdn    = "${var.api_subdomain}.${var.domain_name}"
+  app_fqdn    = "${var.app_subdomain}.${var.domain_name}"
   account_id  = data.aws_caller_identity.current.account_id
 }
 

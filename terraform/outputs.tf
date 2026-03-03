@@ -23,3 +23,18 @@ output "ecr_login_command" {
   value       = "aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${aws_ecr_repository.backend.repository_url}"
 }
 
+output "frontend_bucket_name" {
+  description = "S3 bucket name for frontend"
+  value       = aws_s3_bucket.frontend.id
+}
+
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution ID for frontend"
+  value       = aws_cloudfront_distribution.frontend.id
+}
+
+output "app_url" {
+  description = "Frontend app URL"
+  value       = "https://${local.app_fqdn}"
+}
+

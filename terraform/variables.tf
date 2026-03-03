@@ -22,6 +22,12 @@ variable "api_subdomain" {
   default     = "api"
 }
 
+variable "app_subdomain" {
+  description = "Subdomain for the frontend app"
+  type        = string
+  default     = "app"
+}
+
 variable "instance_type" {
   description = "EC2 instance type"
   type        = string

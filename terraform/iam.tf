@@ -139,3 +139,34 @@ resource "aws_iam_user_policy" "gitlab_ci_ecr" {
     ]
   })
 }
+
+resource "aws_iam_user_policy" "gitlab_ci_frontend" {
+  name = "${local.name_prefix}-gitlab-ci-frontend"
+  user = aws_iam_user.gitlab_ci.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.frontend.arn,
+          "${aws_s3_bucket.frontend.arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudfront:CreateInvalidation"
+        ]
+        Resource = aws_cloudfront_distribution.frontend.arn
+      }
+    ]
+  })
+}
