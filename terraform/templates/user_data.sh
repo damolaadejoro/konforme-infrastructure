@@ -37,9 +37,14 @@ fi
 mount -a
 chmod 700 "$DATA_MOUNT"
 
+# Create subdirectory for Postgres (mount point has lost+found)
+mkdir -p "$DATA_MOUNT/pgdata"
+chown 70:70 "$DATA_MOUNT/pgdata"
+
 # --- Fetch SSM Parameters and Write .env ---
 APP_DIR="/opt/${project_name}"
 mkdir -p "$APP_DIR"
+chown ec2-user:ec2-user "$APP_DIR"
 
 REGION="${aws_region}"
 PREFIX="/${project_name}"
@@ -67,6 +72,7 @@ COOKIE_SAMESITE=$(fetch_param cookie_samesite)
 EOF
 
 chmod 600 "$APP_DIR/.env"
+chown ec2-user:ec2-user "$APP_DIR/.env"
 
 # --- Pull ECR Image ---
 ECR_REPO="${ecr_repo_url}"
@@ -87,7 +93,7 @@ services:
       POSTGRES_USER: konforme
       POSTGRES_PASSWORD: $${POSTGRES_PASSWORD}
     volumes:
-      - /data/postgres:/var/lib/postgresql/data
+      - /data/postgres/pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U konforme"]
       interval: 10s
