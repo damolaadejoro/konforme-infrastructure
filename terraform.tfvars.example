@@ -1,0 +1,59 @@
+# ============================================================================
+# Terraform Variables — GitLab CI Configuration
+# ============================================================================
+#
+# All Terraform variables are passed via GitLab CI/CD variables using the
+# TF_VAR_ prefix. Terraform automatically picks up env vars named TF_VAR_<name>.
+#
+# Set these in GitLab → Settings → CI/CD → Variables:
+#
+# Required CI/CD Variables:
+# -------------------------
+#   AWS_ACCESS_KEY_ID          — AWS credentials for Terraform (masked)
+#   AWS_SECRET_ACCESS_KEY      — AWS credentials for Terraform (masked)
+#   AWS_DEFAULT_REGION         — eu-west-1
+#   AWS_ACCOUNT_ID             — Your AWS account ID
+#   ECR_REPO_NAME              — konforme-backend
+#
+#   TF_VAR_ssh_key_name        — Name of EC2 key pair (must exist in AWS)
+#   TF_VAR_admin_cidr_blocks   — JSON list, e.g. ["203.0.113.10/32"]
+#   TF_VAR_konforme_aws_account_id — AWS Account ID
+#   TF_VAR_secret_key          — (masked) generate: python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+#   TF_VAR_encryption_key      — (masked) generate: python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+#   TF_VAR_postgres_password   — (masked) generate: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+#
+# For SSH deploy:
+#   EC2_HOST                   — EC2 Elastic IP (from terraform output ec2_public_ip)
+#   EC2_USER                   — ec2-user
+#   EC2_SSH_KEY                — (file type) private key for ssh_key_name
+#
+# Optional CI/CD Variables (have defaults):
+# -----------------------------------------
+#   TF_VAR_aws_region          — default: eu-west-1
+#   TF_VAR_project_name        — default: konforme
+#   TF_VAR_domain_name         — default: konforme.io
+#   TF_VAR_api_subdomain       — default: api
+#   TF_VAR_instance_type       — default: t3.micro
+#   TF_VAR_allowed_origins     — default: https://app.konforme.io
+#   TF_VAR_budget_alert_email  — default: "" (no alerts)
+#
+# ============================================================================
+# For LOCAL use only (copy to terraform.tfvars, never commit):
+# ============================================================================
+
+aws_region    = "eu-west-1"
+project_name  = "konforme"
+domain_name   = "konforme.io"
+api_subdomain = "api"
+instance_type = "t3.micro"
+
+ssh_key_name        = "konforme-ec2"
+admin_cidr_blocks   = ["YOUR_IP/32"]
+konforme_aws_account_id = "123456789012"
+
+secret_key        = "GENERATE_ME_MIN_32_CHARS"
+encryption_key    = "GENERATE_ME_FERNET_KEY"
+postgres_password = "GENERATE_ME"
+
+allowed_origins    = "https://app.konforme.io"
+budget_alert_email = "your-email@example.com"
