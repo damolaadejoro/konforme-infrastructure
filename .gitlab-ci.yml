@@ -1,5 +1,6 @@
 stages:
   - validate
+  - plan
   - deploy
 
 variables:
@@ -14,7 +15,7 @@ variables:
     - terraform init -input=false
 
 # Validate + plan on merge requests
-terraform-plan:
+terraform-plan-mr:
   extends: .terraform-base
   stage: validate
   script:
@@ -23,13 +24,27 @@ terraform-plan:
   rules:
     - if: $CI_MERGE_REQUEST_IID
 
-# Apply on main branch
-terraform-apply:
+# Plan on main (saved as artifact for apply)
+terraform-plan:
   extends: .terraform-base
-  stage: deploy
+  stage: plan
   script:
     - terraform validate
     - terraform plan -input=false -out=plan.cache
+  artifacts:
+    paths:
+      - ${TF_DIR}/plan.cache
+    expire_in: 1 hour
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# Apply on main (uses plan artifact)
+terraform-apply:
+  extends: .terraform-base
+  stage: deploy
+  dependencies:
+    - terraform-plan
+  script:
     - terraform apply -input=false -auto-approve plan.cache
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
