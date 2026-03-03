@@ -18,6 +18,7 @@ resource "aws_cloudwatch_log_group" "postgres" {
 # --- Budget Alarm ($20/mo threshold) ---
 
 resource "aws_budgets_budget" "monthly" {
+  count        = var.budget_alert_email != "" ? 1 : 0
   name         = "${var.project_name}-monthly-budget"
   budget_type  = "COST"
   limit_amount = "20"
@@ -29,6 +30,6 @@ resource "aws_budgets_budget" "monthly" {
     threshold                  = 80
     threshold_type             = "PERCENTAGE"
     notification_type          = "ACTUAL"
-    subscriber_email_addresses = var.budget_alert_email != "" ? [var.budget_alert_email] : []
+    subscriber_email_addresses = [var.budget_alert_email]
   }
 }

@@ -104,6 +104,12 @@ resource "aws_iam_role_policy" "sts_assume_role" {
 }
 
 # --- GitLab CI IAM User (for ECR push) ---
+# User was created manually — import block brings it under Terraform management.
+
+import {
+  to = aws_iam_user.gitlab_ci
+  id = "konforme-gitlab-ci"
+}
 
 resource "aws_iam_user" "gitlab_ci" {
   name = "${local.name_prefix}-gitlab-ci"
@@ -132,8 +138,4 @@ resource "aws_iam_user_policy" "gitlab_ci_ecr" {
       }
     ]
   })
-}
-
-resource "aws_iam_access_key" "gitlab_ci" {
-  user = aws_iam_user.gitlab_ci.name
 }

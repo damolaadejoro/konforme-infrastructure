@@ -23,14 +23,3 @@ output "ecr_login_command" {
   value       = "aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${aws_ecr_repository.backend.repository_url}"
 }
 
-output "gitlab_ci_access_key_id" {
-  description = "AWS Access Key ID for GitLab CI (set as CI variable)"
-  value       = aws_iam_access_key.gitlab_ci.id
-  sensitive   = true
-}
-
-output "gitlab_ci_secret_access_key" {
-  description = "AWS Secret Access Key for GitLab CI (set as CI variable)"
-  value       = aws_iam_access_key.gitlab_ci.secret
-  sensitive   = true
-}
