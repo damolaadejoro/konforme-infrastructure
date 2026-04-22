@@ -59,3 +59,23 @@ resource "aws_ssm_parameter" "cookie_samesite" {
   type  = "String"
   value = "none"
 }
+
+# --- S3 bucket names ---
+
+resource "aws_ssm_parameter" "s3_evidence_bucket" {
+  name  = "/${var.project_name}/s3_evidence_bucket"
+  type  = "String"
+  value = aws_s3_bucket.evidence.id
+}
+
+resource "aws_ssm_parameter" "s3_reports_bucket" {
+  name  = "/${var.project_name}/s3_reports_bucket"
+  type  = "String"
+  value = aws_s3_bucket.reports.id
+}
+
+resource "aws_ssm_parameter" "s3_backups_bucket" {
+  name  = "/${var.project_name}/s3_backups_bucket"
+  type  = "String"
+  value = aws_s3_bucket.backups.id
+}

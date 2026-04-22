@@ -28,3 +28,18 @@ output "app_url" {
   value       = "https://${local.app_fqdn}"
 }
 
+output "s3_evidence_bucket" {
+  description = "S3 bucket for evidence uploads"
+  value       = aws_s3_bucket.evidence.id
+}
+
+output "s3_reports_bucket" {
+  description = "S3 bucket for PDF reports"
+  value       = aws_s3_bucket.reports.id
+}
+
+output "s3_backups_bucket" {
+  description = "S3 bucket for database backups"
+  value       = aws_s3_bucket.backups.id
+}
+

@@ -69,6 +69,8 @@ KONFORME_AWS_ACCOUNT_ID=$(fetch_param konforme_aws_account_id)
 COOKIE_DOMAIN=$(fetch_param cookie_domain)
 COOKIE_SECURE=$(fetch_param cookie_secure)
 COOKIE_SAMESITE=$(fetch_param cookie_samesite)
+S3_EVIDENCE_BUCKET=$(fetch_param s3_evidence_bucket)
+S3_EVIDENCE_REGION=${aws_region}
 EOF
 
 chmod 600 "$APP_DIR/.env"
@@ -128,7 +130,7 @@ dnf install -y nginx
 cat > /etc/nginx/conf.d/${project_name}.conf <<'NGINX'
 server {
     listen 80;
-    server_name ${api_fqdn};
+    server_name ${api_fqdn} ${app_fqdn};
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -149,17 +151,22 @@ dnf install -y certbot python3-certbot-nginx
 
 certbot --nginx \
   -d "${api_fqdn}" \
+  -d "${app_fqdn}" \
   --non-interactive \
   --agree-tos \
-  --email "admin@${api_fqdn}" \
+  --email "admin@${domain_name}" \
   --redirect \
   || echo "Certbot failed — will retry manually"
+
+# Create frontend directory
+mkdir -p /var/www/konforme-frontend
+chown ec2-user:ec2-user /var/www/konforme-frontend
 
 # Write the final Nginx config with proxy
 cat > /etc/nginx/conf.d/${project_name}.conf <<'NGINXSSL'
 server {
     listen 80;
-    server_name ${api_fqdn};
+    server_name ${api_fqdn} ${app_fqdn};
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -187,6 +194,28 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name ${app_fqdn};
+
+    ssl_certificate /etc/letsencrypt/live/${app_fqdn}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${app_fqdn}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    root /var/www/konforme-frontend;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
     }
 }
 NGINXSSL

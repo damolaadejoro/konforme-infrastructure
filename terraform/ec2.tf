@@ -35,6 +35,8 @@ resource "aws_instance" "main" {
     project_name = var.project_name
     ecr_repo_url = aws_ecr_repository.backend.repository_url
     api_fqdn     = local.api_fqdn
+    app_fqdn     = local.app_fqdn
+    domain_name  = var.domain_name
     data_device  = "/dev/xvdf"
   }))
 

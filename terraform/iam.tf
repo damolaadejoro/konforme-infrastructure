@@ -103,6 +103,36 @@ resource "aws_iam_role_policy" "sts_assume_role" {
   })
 }
 
+# S3 bucket access for evidence, reports, backups
+resource "aws_iam_role_policy" "s3_access" {
+  name = "${local.name_prefix}-s3-access"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:HeadObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.evidence.arn,
+          "${aws_s3_bucket.evidence.arn}/*",
+          aws_s3_bucket.reports.arn,
+          "${aws_s3_bucket.reports.arn}/*",
+          aws_s3_bucket.backups.arn,
+          "${aws_s3_bucket.backups.arn}/*",
+        ]
+      }
+    ]
+  })
+}
+
 # --- GitLab CI IAM User (for ECR push) ---
 # User was created manually — import block brings it under Terraform management.
 
