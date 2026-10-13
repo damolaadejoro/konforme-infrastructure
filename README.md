@@ -1,93 +1,117 @@
 # konforme-infrastructure
 
-
-
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+Terraform for Konforme on AWS (`eu-west-1`), serverless:
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/konforme-group/konforme-infrastructure.git
-git branch -M main
-git push -uf origin main
+app.konforme.io ──► CloudFront ──► S3 (React build)
+
+api.konforme.io ──► API Gateway (HTTP) ──► Lambda konforme-api ──┬──► DynamoDB table "konforme"
+                                              │ async invoke      ├──► S3 (evidence, reports)
+EventBridge Scheduler (4 daily jobs) ──► Lambda konforme-worker ──┴──► customer AWS/Azure APIs, Resend
+CI after each deploy ──────────────────► Lambda konforme-migrate (seeds reference data)
 ```
 
-## Integrate with your tools
+All three Lambdas run the same container image (`konforme-backend/Dockerfile.lambda`), with different handlers.
+No VPC is involved: Lambda reaches DynamoDB and the internet directly.
 
-* [Set up project integrations](https://gitlab.com/konforme-group/konforme-infrastructure/-/settings/integrations)
+| File | What |
+|---|---|
+| `dynamodb.tf` | The single DynamoDB table + indexes (key layout: `konforme-backend/store.py`) |
+| `lambda.tf` | Lambda functions, API Gateway + `api.` domain, daily schedules |
+| `frontend.tf` | S3 + CloudFront + `app.` certificate and security headers |
+| `github_oidc.tf` | IAM roles GitHub Actions assumes (no stored AWS keys) |
+| `ec2.tf`, `vpc.tf`, `security.tf`, `ssm.tf`, EC2 parts of `iam.tf` | **Old stack — delete in Phase 3** |
 
-## Collaborate with your team
+## Rough monthly cost (low traffic)
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+| Item | ~USD |
+|---|---|
+| DynamoDB (on-demand reads/writes + storage, point-in-time recovery) | 1–5 |
+| Lambda, API Gateway, CloudFront, S3, EventBridge | under 5 at current scale |
 
-## Test and Deploy
+---
 
-Use the built-in continuous integration in GitLab.
+## Migration runbook (EC2 → Lambda)
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+The new stack is built **next to** EC2. Nothing user-facing changes until Phase 2 step 3.
 
-***
+### Prerequisites
 
-# Editing this README
+- Working AWS credentials locally (`aws sts get-caller-identity` must succeed).
+- `terraform.tfvars` with the existing values (see `terraform.tfvars.example`) plus the new ones:
+  `lambda_image_tag`, `resend_api_key` (otherwise no emails are sent).
+- Docker on your machine (to push the first image).
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+### Phase 1: build the serverless stack
 
-## Suggestions for a good README
+```bash
+# 1. Push the first Lambda image (CI pushes all later ones)
+REPO=$(cd terraform && terraform output -raw ecr_repository_url)
+aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin "${REPO%%/*}"
+cd ../Konforme-project            # build context is the repo root
+docker build --platform linux/amd64 --provenance=false -f konforme-backend/Dockerfile.lambda -t "$REPO:bootstrap-1" .
+docker push "$REPO:bootstrap-1"
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+# 2. Create everything (lambda_image_tag = "bootstrap-1" in tfvars). Takes ~10-15 min (CloudFront).
+cd terraform && terraform init && terraform plan && terraform apply
 
-## Name
-Choose a self-explaining name for your project.
+# 3. Check the API can reach DynamoDB (an empty table is fine)
+curl "$(terraform output -raw api_gateway_url)/health"      # → "database":"connected"
+```
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+Then set up GitHub (values from `terraform output`) and let CI deploy the frontend to S3 once:
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+| Repo | Variables (Settings → Secrets and variables → Actions → Variables) |
+|---|---|
+| `Konforme-project-` | `AWS_ROLE_ARN` = `github_role_arns.backend` |
+| `konforme-frontend` | `AWS_ROLE_ARN` = `github_role_arns.frontend`, `FRONTEND_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID`, `VITE_API_URL=https://api.konforme.io`, `VITE_EMAIL_ENABLED` |
+| `konforme-infrastructure` | Create environment **production** with yourself as required reviewer. Variables: `AWS_ROLE_ARN` = `github_role_arns.infra`, `TF_VAR_KONFORME_AWS_ACCOUNT_ID`, `TF_VAR_SSH_KEY_NAME`, `TF_VAR_ADMIN_CIDR_BLOCKS`, `TF_VAR_LAMBDA_IMAGE_TAG`, `TF_VAR_CUTOVER_TO_LAMBDA`, `TF_VAR_BUDGET_ALERT_EMAIL`. Secrets: `TF_VAR_SECRET_KEY`, `TF_VAR_ENCRYPTION_KEY`, `TF_VAR_POSTGRES_PASSWORD`, `TF_VAR_RESEND_API_KEY` |
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+`TF_VAR_SECRET_KEY`, `TF_VAR_ENCRYPTION_KEY` and `TF_VAR_POSTGRES_PASSWORD` **must be the values already in use**.
+`ENCRYPTION_KEY` decrypts the stored customer cloud credentials; a new key makes all of them unreadable.
+(`TF_VAR_POSTGRES_PASSWORD` is only needed until the EC2 stack is removed.)
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+### Phase 2: move the data and cut over (~15 min downtime)
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+```bash
+IMAGE="$(terraform output -raw ecr_repository_url):bootstrap-1"
+scp ../scripts/migrate-ec2-to-dynamodb.sh ec2-user@<EC2_IP>:
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+# 1a. Rehearsal: reads and converts every row, writes nothing, site stays up
+ssh ec2-user@<EC2_IP> ./migrate-ec2-to-dynamodb.sh "$IMAGE" --dry-run
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+# 1b. The real copy. Stops the EC2 backend, backs Postgres up to S3, copies every table into DynamoDB,
+#     compares row counts and re-verifies every account's audit hash chain. Fails loudly on any mismatch.
+ssh ec2-user@<EC2_IP> ./migrate-ec2-to-dynamodb.sh "$IMAGE"
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+# 2. Refresh reference data (base controls, question mappings)
+aws lambda invoke --function-name konforme-migrate --cli-read-timeout 310 /dev/stdout
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+# 3. Switch DNS to API Gateway/CloudFront and turn on the daily jobs
+terraform apply -var cutover_to_lambda=true          # then set it permanently in tfvars / GitHub vars
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+# 4. Verify: log in at https://app.konforme.io, run a scan, upload + download evidence, generate a report
+```
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+**Rollback before step 3:** `ssh ec2-user@<EC2_IP> 'cd /opt/konforme && docker compose start backend'`.
+**Rollback after step 3:** `terraform apply -var cutover_to_lambda=false` and restart the EC2 backend.
+Anything written to DynamoDB after cutover would need copying back by hand.
 
-## License
-For open source projects, say how it is licensed.
+### Phase 3: remove EC2 (after about a week of stable running)
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+1. Snapshot the `konforme-postgres-data` EBS volume (it has `prevent_destroy`; remove that line to delete it).
+2. Delete `ec2.tf`, `vpc.tf`, `security.tf`, `ssm.tf`, `templates/`, `scripts/deploy.sh` and
+   `scripts/migrate-ec2-to-dynamodb.sh`; the EC2 role and GitLab user in `iam.tf`; `aws_iam_role_policy.ec2_dynamodb_migration`
+   in `dynamodb.tf`; the EC2 outputs; the nginx/postgres log groups; the EC2 variables (`instance_type`,
+   `ssh_key_name`, `admin_cidr_blocks`, volume sizes, `postgres_password`).
+3. In `dns.tf`, drop the `cutover_to_lambda` conditionals and keep only the alias records.
+4. `terraform apply`, then delete the old `konforme-gitlab-ci` access keys if any remain.
+
+## Operating notes
+
+- **Logs:** CloudWatch `/aws/lambda/konforme-{api,worker,migrate}` and `/aws/apigateway/konforme-api`.
+- **First request after idle** takes a few seconds while the Lambda cold-starts.
+- **Backups:** DynamoDB point-in-time recovery keeps 35 days; restore with
+  `aws dynamodb restore-table-to-point-in-time` (it restores into a new table).
+- **Data model:** everything is in one table; read `konforme-backend/store.py` before adding a new model or query pattern.
+- **Outbound IP:** Lambdas outside a VPC have no fixed outbound IP, so customers cannot allowlist Konforme by IP.

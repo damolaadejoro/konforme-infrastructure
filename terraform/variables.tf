@@ -92,3 +92,92 @@ variable "budget_alert_email" {
   type        = string
   default     = ""
 }
+
+variable "budget_limit_usd" {
+  description = "Monthly budget alarm threshold"
+  type        = number
+  default     = 20
+}
+
+# --- Serverless stack ---
+
+variable "cutover_to_lambda" {
+  description = "Point api/app DNS at API Gateway/CloudFront and enable the daily jobs. Leave false until the data migration is done."
+  type        = bool
+  default     = false
+}
+
+variable "lambda_image_tag" {
+  description = "Initial ECR image tag for the backend Lambdas (CI deploys later images directly)"
+  type        = string
+}
+
+variable "dynamodb_table_name" {
+  description = "DynamoDB table holding all application data"
+  type        = string
+  default     = "konforme"
+}
+
+variable "api_throttle_burst" {
+  description = "API Gateway burst limit"
+  type        = number
+  default     = 100
+}
+
+variable "api_throttle_rate" {
+  description = "API Gateway steady-state requests per second"
+  type        = number
+  default     = 50
+}
+
+variable "email_provider" {
+  description = "Email provider: resend or ses"
+  type        = string
+  default     = "resend"
+}
+
+variable "resend_api_key" {
+  description = "Resend API key (when email_provider = resend)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "sender_email" {
+  description = "From address for outgoing email"
+  type        = string
+  default     = "noreply@konforme.io"
+}
+
+variable "signup_webhook_url" {
+  description = "Optional webhook notified on new signups"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+# --- GitHub Actions (OIDC) ---
+
+variable "github_owner" {
+  description = "GitHub user/org that owns the repos"
+  type        = string
+  default     = "damolaadejoro"
+}
+
+variable "github_backend_repo" {
+  description = "Backend repository name"
+  type        = string
+  default     = "Konforme-project-"
+}
+
+variable "github_frontend_repo" {
+  description = "Frontend repository name"
+  type        = string
+  default     = "konforme-frontend"
+}
+
+variable "github_infra_repo" {
+  description = "Infrastructure repository name"
+  type        = string
+  default     = "konforme-infrastructure"
+}

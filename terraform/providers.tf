@@ -21,8 +21,7 @@ provider "aws" {
   }
 }
 
-# Temporary: needed to destroy ACM cert created in us-east-1
-# Remove this provider after the next successful apply
+# CloudFront certificates must live in us-east-1 (see frontend.tf)
 provider "aws" {
   alias  = "us_east_1"
   region = "us-east-1"

@@ -15,13 +15,13 @@ resource "aws_cloudwatch_log_group" "postgres" {
   retention_in_days = 14
 }
 
-# --- Budget Alarm ($20/mo threshold) ---
+# --- Budget Alarm ---
 
 resource "aws_budgets_budget" "monthly" {
   count        = var.budget_alert_email != "" ? 1 : 0
   name         = "${var.project_name}-monthly-budget"
   budget_type  = "COST"
-  limit_amount = "20"
+  limit_amount = tostring(var.budget_limit_usd)
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
 

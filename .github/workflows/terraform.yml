@@ -1,0 +1,62 @@
+name: Terraform
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: terraform
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: terraform
+
+jobs:
+  # No AWS access on PRs: formatting and static validation only
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.3
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
+  # Runs only on main, and only after approval on the "production" environment
+  # (the AWS role trusts nothing but this environment).
+  apply:
+    needs: validate
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      TF_VAR_konforme_aws_account_id: ${{ vars.TF_VAR_KONFORME_AWS_ACCOUNT_ID }}
+      TF_VAR_ssh_key_name: ${{ vars.TF_VAR_SSH_KEY_NAME }}
+      TF_VAR_admin_cidr_blocks: ${{ vars.TF_VAR_ADMIN_CIDR_BLOCKS }}
+      TF_VAR_lambda_image_tag: ${{ vars.TF_VAR_LAMBDA_IMAGE_TAG }}
+      TF_VAR_cutover_to_lambda: ${{ vars.TF_VAR_CUTOVER_TO_LAMBDA }}
+      TF_VAR_budget_alert_email: ${{ vars.TF_VAR_BUDGET_ALERT_EMAIL }}
+      TF_VAR_secret_key: ${{ secrets.TF_VAR_SECRET_KEY }}
+      TF_VAR_encryption_key: ${{ secrets.TF_VAR_ENCRYPTION_KEY }}
+      TF_VAR_postgres_password: ${{ secrets.TF_VAR_POSTGRES_PASSWORD }}
+      TF_VAR_resend_api_key: ${{ secrets.TF_VAR_RESEND_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: eu-west-1
+      - run: terraform init -input=false
+      - run: terraform plan -input=false -out=tfplan
+      - run: terraform apply -input=false tfplan
