@@ -43,3 +43,36 @@ output "s3_backups_bucket" {
   value       = aws_s3_bucket.backups.id
 }
 
+
+# --- Serverless stack ---
+
+output "api_gateway_url" {
+  description = "Default API Gateway URL (test before cutover; disabled after)"
+  value       = aws_apigatewayv2_api.main.api_endpoint
+}
+
+output "dynamodb_table" {
+  description = "DynamoDB table name"
+  value       = aws_dynamodb_table.main.name
+}
+
+output "frontend_bucket" {
+  description = "S3 bucket the frontend is deployed to"
+  value       = aws_s3_bucket.frontend.id
+}
+
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution ID (frontend cache invalidation)"
+  value       = aws_cloudfront_distribution.frontend.id
+}
+
+output "cloudfront_domain" {
+  description = "CloudFront domain (test before cutover)"
+  value       = aws_cloudfront_distribution.frontend.domain_name
+}
+
+output "github_role_arns" {
+  description = "IAM roles for GitHub Actions — set as AWS_ROLE_ARN in each repo"
+  value       = { for k, r in aws_iam_role.github : k => r.arn }
+}
+
