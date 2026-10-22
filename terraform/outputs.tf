@@ -1,16 +1,6 @@
-output "ec2_public_ip" {
-  description = "Elastic IP of the EC2 instance"
-  value       = aws_eip.main.public_ip
-}
-
 output "api_url" {
   description = "API endpoint URL"
   value       = "https://${var.api_subdomain}.${var.domain_name}"
-}
-
-output "ssh_command" {
-  description = "SSH command to connect to the EC2 instance"
-  value       = "ssh -i ~/.ssh/${var.ssh_key_name}.pem ec2-user@${aws_eip.main.public_ip}"
 }
 
 output "ecr_repository_url" {
@@ -36,11 +26,6 @@ output "s3_evidence_bucket" {
 output "s3_reports_bucket" {
   description = "S3 bucket for PDF reports"
   value       = aws_s3_bucket.reports.id
-}
-
-output "s3_backups_bucket" {
-  description = "S3 bucket for database backups"
-  value       = aws_s3_bucket.backups.id
 }
 
 
@@ -76,3 +61,19 @@ output "github_role_arns" {
   value       = { for k, r in aws_iam_role.github : k => r.arn }
 }
 
+output "dns_records" {
+  description = "Records to add in Netlify DNS: certificate checks now, api/app at cutover"
+  value = {
+    certificate_checks = [
+      for o in concat(tolist(aws_acm_certificate.api.domain_validation_options), tolist(aws_acm_certificate.app.domain_validation_options)) : {
+        type  = o.resource_record_type
+        name  = o.resource_record_name
+        value = o.resource_record_value
+      }
+    ]
+    at_cutover = {
+      (local.api_fqdn) = { type = "CNAME", value = try(aws_apigatewayv2_domain_name.api.domain_name_configuration[0].target_domain_name, "(after full apply)") }
+      (local.app_fqdn) = { type = "CNAME", value = try(aws_cloudfront_distribution.frontend.domain_name, "(after full apply)") }
+    }
+  }
+}

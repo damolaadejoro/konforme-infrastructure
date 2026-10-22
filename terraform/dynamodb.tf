@@ -68,28 +68,3 @@ resource "aws_dynamodb_table" "main" {
 locals {
   dynamodb_lookup_indexes = ["lk_email", "lk_token", "lk_verify", "lk_reset"]
 }
-
-# Temporary: lets the data-migration container on EC2 write the table.
-# Remove together with the EC2 resources (Phase 3).
-resource "aws_iam_role_policy" "ec2_dynamodb_migration" {
-  name = "${local.name_prefix}-dynamodb-migration"
-  role = aws_iam_role.ec2.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:BatchWriteItem",
-          "dynamodb:PutItem",
-          "dynamodb:GetItem",
-          "dynamodb:Query",
-          "dynamodb:UpdateItem",
-          "dynamodb:ConditionCheckItem",
-        ]
-        Resource = [aws_dynamodb_table.main.arn, "${aws_dynamodb_table.main.arn}/index/*"]
-      }
-    ]
-  })
-}

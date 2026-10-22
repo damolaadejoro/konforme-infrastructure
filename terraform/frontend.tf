@@ -63,23 +63,11 @@ resource "aws_acm_certificate" "app" {
   }
 }
 
-resource "aws_route53_record" "app_cert_validation" {
-  for_each = {
-    for o in aws_acm_certificate.app.domain_validation_options : o.domain_name => o
-  }
-
-  zone_id         = data.aws_route53_zone.main.zone_id
-  name            = each.value.resource_record_name
-  type            = each.value.resource_record_type
-  records         = [each.value.resource_record_value]
-  ttl             = 300
-  allow_overwrite = true
-}
-
+# DNS is on Netlify: add the record from `terraform output dns_records` there.
+# Terraform waits here until AWS sees it.
 resource "aws_acm_certificate_validation" "app" {
-  provider                = aws.us_east_1
-  certificate_arn         = aws_acm_certificate.app.arn
-  validation_record_fqdns = [for r in aws_route53_record.app_cert_validation : r.fqdn]
+  provider        = aws.us_east_1
+  certificate_arn = aws_acm_certificate.app.arn
 }
 
 # Same security headers the site had on Netlify, with the API added to connect-src

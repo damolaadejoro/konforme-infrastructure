@@ -34,7 +34,7 @@ locals {
     SECRET_KEY              = var.secret_key
     ENCRYPTION_KEY          = var.encryption_key
     ALLOWED_ORIGINS         = var.allowed_origins
-    KONFORME_AWS_ACCOUNT_ID = var.konforme_aws_account_id
+    KONFORME_AWS_ACCOUNT_ID = local.konforme_aws_account_id
     COOKIE_DOMAIN           = ".${var.domain_name}"
     COOKIE_SECURE           = "true"
     COOKIE_SAMESITE         = "none"
@@ -316,22 +316,10 @@ resource "aws_acm_certificate" "api" {
   }
 }
 
-resource "aws_route53_record" "api_cert_validation" {
-  for_each = {
-    for o in aws_acm_certificate.api.domain_validation_options : o.domain_name => o
-  }
-
-  zone_id         = data.aws_route53_zone.main.zone_id
-  name            = each.value.resource_record_name
-  type            = each.value.resource_record_type
-  records         = [each.value.resource_record_value]
-  ttl             = 300
-  allow_overwrite = true
-}
-
+# DNS is on Netlify: add the record from `terraform output dns_records` there.
+# Terraform waits here until AWS sees it.
 resource "aws_acm_certificate_validation" "api" {
-  certificate_arn         = aws_acm_certificate.api.arn
-  validation_record_fqdns = [for r in aws_route53_record.api_cert_validation : r.fqdn]
+  certificate_arn = aws_acm_certificate.api.arn
 }
 
 resource "aws_apigatewayv2_domain_name" "api" {

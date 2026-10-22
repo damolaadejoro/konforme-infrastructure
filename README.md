@@ -20,7 +20,7 @@ No VPC is involved: Lambda reaches DynamoDB and the internet directly.
 | `lambda.tf` | Lambda functions, API Gateway + `api.` domain, daily schedules |
 | `frontend.tf` | S3 + CloudFront + `app.` certificate and security headers |
 | `github_oidc.tf` | IAM roles GitHub Actions assumes (no stored AWS keys) |
-| `ec2.tf`, `vpc.tf`, `security.tf`, `ssm.tf`, EC2 parts of `iam.tf` | **Old stack — delete in Phase 3** |
+| `s3.tf` | Evidence and report buckets |
 
 ## Rough monthly cost (low traffic)
 
@@ -31,81 +31,79 @@ No VPC is involved: Lambda reaches DynamoDB and the internet directly.
 
 ---
 
-## Migration runbook (EC2 → Lambda)
+## Setup runbook (Render + Netlify → AWS)
 
-The new stack is built **next to** EC2. Nothing user-facing changes until Phase 2 step 3.
+Today the backend runs on Render, the site on Netlify, and `konforme.io` DNS is Netlify DNS.
+DNS stays on Netlify: Terraform prints the records to add there (`terraform output dns_records`).
+Nothing user-facing changes until step 6.
 
-### Prerequisites
+### 1. Prerequisites (once)
 
-- Working AWS credentials locally (`aws sts get-caller-identity` must succeed).
-- `terraform.tfvars` with the existing values (see `terraform.tfvars.example`) plus the new ones:
-  `lambda_image_tag`, `resend_api_key` (otherwise no emails are sent).
-- Docker on your machine (to push the first image).
+- AWS login works: `aws sts get-caller-identity`.
+- Docker running locally.
+- `cp terraform/terraform.tfvars.example terraform/terraform.tfvars` and fill it in.
+  `secret_key` and `encryption_key` **must be copied from Render** (backend service → Environment).
+- Terraform state storage: `./scripts/init-state.sh`
 
-### Phase 1: build the serverless stack
+### 2. Registry, certificates, first image
 
 ```bash
-# 1. Push the first Lambda image (CI pushes all later ones)
-REPO=$(cd terraform && terraform output -raw ecr_repository_url)
+cd terraform && terraform init
+terraform apply -target=aws_ecr_repository.backend -target=aws_acm_certificate.api -target=aws_acm_certificate.app
+terraform output dns_records     # add every "certificate_checks" entry as a CNAME in Netlify DNS
+
+REPO=$(terraform output -raw ecr_repository_url)
 aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin "${REPO%%/*}"
-cd ../Konforme-project            # build context is the repo root
+cd ../../Konforme-project          # build context is the backend repo root
 docker build --platform linux/amd64 --provenance=false -f konforme-backend/Dockerfile.lambda -t "$REPO:bootstrap-1" .
 docker push "$REPO:bootstrap-1"
+```
 
-# 2. Create everything (lambda_image_tag = "bootstrap-1" in tfvars). Takes ~10-15 min (CloudFront).
-cd terraform && terraform init && terraform plan && terraform apply
+### 3. Everything else (~10-15 min, mostly CloudFront)
 
-# 3. Check the API can reach DynamoDB (an empty table is fine)
+```bash
+cd ../konforme-infrastructure/terraform
+terraform plan
+terraform apply                  # waits for the certificate checks from step 2 if DNS is still catching up
 curl "$(terraform output -raw api_gateway_url)/health"      # → "database":"connected"
 ```
 
-Then set up GitHub (values from `terraform output`) and let CI deploy the frontend to S3 once:
+### 4. GitHub (values from `terraform output`)
 
-| Repo | Variables (Settings → Secrets and variables → Actions → Variables) |
+| Repo | Variables (Settings → Secrets and variables → Actions) |
 |---|---|
 | `Konforme-project-` | `AWS_ROLE_ARN` = `github_role_arns.backend` |
 | `konforme-frontend` | `AWS_ROLE_ARN` = `github_role_arns.frontend`, `FRONTEND_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID`, `VITE_API_URL=https://api.konforme.io`, `VITE_EMAIL_ENABLED` |
-| `konforme-infrastructure` | Create environment **production** with yourself as required reviewer. Variables: `AWS_ROLE_ARN` = `github_role_arns.infra`, `TF_VAR_KONFORME_AWS_ACCOUNT_ID`, `TF_VAR_SSH_KEY_NAME`, `TF_VAR_ADMIN_CIDR_BLOCKS`, `TF_VAR_LAMBDA_IMAGE_TAG`, `TF_VAR_CUTOVER_TO_LAMBDA`, `TF_VAR_BUDGET_ALERT_EMAIL`. Secrets: `TF_VAR_SECRET_KEY`, `TF_VAR_ENCRYPTION_KEY`, `TF_VAR_POSTGRES_PASSWORD`, `TF_VAR_RESEND_API_KEY` |
+| `konforme-infrastructure` | Environment **production** (you as reviewer). Variables: `AWS_ROLE_ARN` = `github_role_arns.infra`, `TF_VAR_LAMBDA_IMAGE_TAG`, `TF_VAR_CUTOVER_TO_LAMBDA`, `TF_VAR_BUDGET_ALERT_EMAIL`. Secrets: `TF_VAR_SECRET_KEY`, `TF_VAR_ENCRYPTION_KEY`, `TF_VAR_RESEND_API_KEY` |
 
-`TF_VAR_SECRET_KEY`, `TF_VAR_ENCRYPTION_KEY` and `TF_VAR_POSTGRES_PASSWORD` **must be the values already in use**.
-`ENCRYPTION_KEY` decrypts the stored customer cloud credentials; a new key makes all of them unreadable.
-(`TF_VAR_POSTGRES_PASSWORD` is only needed until the EC2 stack is removed.)
+Run the frontend workflow once so the site is in S3, and check it at `https://<cloudfront_domain>`.
 
-### Phase 2: move the data and cut over (~15 min downtime)
+### 5. Copy the data from Render (~15 min downtime)
 
 ```bash
-IMAGE="$(terraform output -raw ecr_repository_url):bootstrap-1"
-scp ../scripts/migrate-ec2-to-dynamodb.sh ec2-user@<EC2_IP>:
+export RENDER_DATABASE_URL='postgresql://...'    # Render → database → External Database URL
+IMAGE="$(cd terraform && terraform output -raw ecr_repository_url):bootstrap-1"
 
-# 1a. Rehearsal: reads and converts every row, writes nothing, site stays up
-ssh ec2-user@<EC2_IP> ./migrate-ec2-to-dynamodb.sh "$IMAGE" --dry-run
+./scripts/migrate-render-to-dynamodb.sh "$IMAGE" --dry-run   # rehearsal, writes nothing
 
-# 1b. The real copy. Stops the EC2 backend, backs Postgres up to S3, copies every table into DynamoDB,
-#     compares row counts and re-verifies every account's audit hash chain. Fails loudly on any mismatch.
-ssh ec2-user@<EC2_IP> ./migrate-ec2-to-dynamodb.sh "$IMAGE"
-
-# 2. Refresh reference data (base controls, question mappings)
+# Suspend the Render backend service, then the real copy (backs Render up to a local file first,
+# compares row counts and re-checks every audit hash chain; fails loudly on any mismatch)
+./scripts/migrate-render-to-dynamodb.sh "$IMAGE"
 aws lambda invoke --function-name konforme-migrate --cli-read-timeout 310 /dev/stdout
-
-# 3. Switch DNS to API Gateway/CloudFront and turn on the daily jobs
-terraform apply -var cutover_to_lambda=true          # then set it permanently in tfvars / GitHub vars
-
-# 4. Verify: log in at https://app.konforme.io, run a scan, upload + download evidence, generate a report
 ```
 
-**Rollback before step 3:** `ssh ec2-user@<EC2_IP> 'cd /opt/konforme && docker compose start backend'`.
-**Rollback after step 3:** `terraform apply -var cutover_to_lambda=false` and restart the EC2 backend.
-Anything written to DynamoDB after cutover would need copying back by hand.
+### 6. Switch over
 
-### Phase 3: remove EC2 (after about a week of stable running)
+1. In Netlify, remove `app.konforme.io` from the Netlify site's domains.
+2. In Netlify DNS, set the two `at_cutover` records from `terraform output dns_records`
+   (`api` replaces the CNAME to Render).
+3. `terraform apply -var cutover_to_lambda=true` (daily jobs on), then set it in tfvars and the GitHub variable.
+4. Check: log in at https://app.konforme.io, run a scan, upload + download evidence, generate a report.
 
-1. Snapshot the `konforme-postgres-data` EBS volume (it has `prevent_destroy`; remove that line to delete it).
-2. Delete `ec2.tf`, `vpc.tf`, `security.tf`, `ssm.tf`, `templates/`, `scripts/deploy.sh` and
-   `scripts/migrate-ec2-to-dynamodb.sh`; the EC2 role and GitLab user in `iam.tf`; `aws_iam_role_policy.ec2_dynamodb_migration`
-   in `dynamodb.tf`; the EC2 outputs; the nginx/postgres log groups; the EC2 variables (`instance_type`,
-   `ssh_key_name`, `admin_cidr_blocks`, volume sizes, `postgres_password`).
-3. In `dns.tf`, drop the `cutover_to_lambda` conditionals and keep only the alias records.
-4. `terraform apply`, then delete the old `konforme-gitlab-ci` access keys if any remain.
+**Rollback:** point the `api`/`app` records back to Render/Netlify and resume the Render service.
+Anything written to DynamoDB after the switch would need copying back by hand.
+
+After about a week of stable running, delete the Render service and database.
 
 ## Operating notes
 
