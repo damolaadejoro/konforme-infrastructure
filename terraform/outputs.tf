@@ -1,6 +1,6 @@
 output "api_url" {
   description = "API endpoint URL"
-  value       = "https://${var.api_subdomain}.${var.domain_name}"
+  value       = local.api_url
 }
 
 output "ecr_repository_url" {
@@ -15,7 +15,7 @@ output "ecr_login_command" {
 
 output "app_url" {
   description = "Frontend app URL"
-  value       = "https://${local.app_fqdn}"
+  value       = local.app_url
 }
 
 output "s3_evidence_bucket" {
@@ -62,18 +62,18 @@ output "github_role_arns" {
 }
 
 output "dns_records" {
-  description = "Records to add in Netlify DNS: certificate checks now, api/app at cutover"
-  value = {
+  description = "With use_custom_domains: records to add in Netlify DNS (certificate checks first, api/app at cutover)"
+  value = var.use_custom_domains ? {
     certificate_checks = [
-      for o in concat(tolist(aws_acm_certificate.api.domain_validation_options), tolist(aws_acm_certificate.app.domain_validation_options)) : {
+      for o in concat(tolist(aws_acm_certificate.api[0].domain_validation_options), tolist(aws_acm_certificate.app[0].domain_validation_options)) : {
         type  = o.resource_record_type
         name  = o.resource_record_name
         value = o.resource_record_value
       }
     ]
     at_cutover = {
-      (local.api_fqdn) = { type = "CNAME", value = try(aws_apigatewayv2_domain_name.api.domain_name_configuration[0].target_domain_name, "(after full apply)") }
-      (local.app_fqdn) = { type = "CNAME", value = try(aws_cloudfront_distribution.frontend.domain_name, "(after full apply)") }
+      (local.api_fqdn) = { type = "CNAME", value = aws_apigatewayv2_domain_name.api[0].domain_name_configuration[0].target_domain_name }
+      (local.app_fqdn) = { type = "CNAME", value = aws_cloudfront_distribution.frontend.domain_name }
     }
-  }
+  } : null
 }

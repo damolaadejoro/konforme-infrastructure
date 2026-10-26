@@ -39,10 +39,7 @@ resource "aws_s3_bucket_cors_configuration" "evidence" {
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "PUT"]
-    allowed_origins = [
-      "https://${local.app_fqdn}",
-      "https://${local.api_fqdn}",
-    ]
+    allowed_origins = [local.app_url, local.api_url]
     expose_headers  = ["ETag"]
     max_age_seconds = 3600
   }

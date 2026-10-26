@@ -33,12 +33,12 @@ locals {
     DYNAMODB_REGION         = var.aws_region
     SECRET_KEY              = var.secret_key
     ENCRYPTION_KEY          = var.encryption_key
-    ALLOWED_ORIGINS         = var.allowed_origins
+    ALLOWED_ORIGINS         = var.use_custom_domains ? var.allowed_origins : local.app_url
     KONFORME_AWS_ACCOUNT_ID = local.konforme_aws_account_id
-    COOKIE_DOMAIN           = ".${var.domain_name}"
+    COOKIE_DOMAIN           = var.use_custom_domains ? ".${var.domain_name}" : ""
     COOKIE_SECURE           = "true"
     COOKIE_SAMESITE         = "none"
-    FRONTEND_BASE_URL       = "https://${local.app_fqdn}"
+    FRONTEND_BASE_URL       = local.app_url
     UPLOAD_DIR              = "/tmp/evidence"
     REPORT_STORAGE_PATH     = "/tmp/reports"
     S3_EVIDENCE_BUCKET      = aws_s3_bucket.evidence.id
@@ -251,7 +251,7 @@ resource "aws_apigatewayv2_api" "main" {
   name          = "${local.name_prefix}-api"
   protocol_type = "HTTP"
   # CORS is handled by FastAPI's CORSMiddleware
-  disable_execute_api_endpoint = var.cutover_to_lambda
+  disable_execute_api_endpoint = var.cutover_to_lambda && var.use_custom_domains
 }
 
 resource "aws_apigatewayv2_integration" "api" {
@@ -308,6 +308,7 @@ resource "aws_lambda_permission" "apigw" {
 # --- api.<domain> custom domain ---
 
 resource "aws_acm_certificate" "api" {
+  count             = var.use_custom_domains ? 1 : 0
   domain_name       = local.api_fqdn
   validation_method = "DNS"
 
@@ -319,21 +320,24 @@ resource "aws_acm_certificate" "api" {
 # DNS is on Netlify: add the record from `terraform output dns_records` there.
 # Terraform waits here until AWS sees it.
 resource "aws_acm_certificate_validation" "api" {
-  certificate_arn = aws_acm_certificate.api.arn
+  count           = var.use_custom_domains ? 1 : 0
+  certificate_arn = aws_acm_certificate.api[0].arn
 }
 
 resource "aws_apigatewayv2_domain_name" "api" {
+  count       = var.use_custom_domains ? 1 : 0
   domain_name = local.api_fqdn
 
   domain_name_configuration {
-    certificate_arn = aws_acm_certificate_validation.api.certificate_arn
+    certificate_arn = aws_acm_certificate_validation.api[0].certificate_arn
     endpoint_type   = "REGIONAL"
     security_policy = "TLS_1_2"
   }
 }
 
 resource "aws_apigatewayv2_api_mapping" "api" {
+  count       = var.use_custom_domains ? 1 : 0
   api_id      = aws_apigatewayv2_api.main.id
-  domain_name = aws_apigatewayv2_domain_name.api.id
+  domain_name = aws_apigatewayv2_domain_name.api[0].id
   stage       = aws_apigatewayv2_stage.default.id
 }

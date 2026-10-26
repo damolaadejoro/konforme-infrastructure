@@ -35,6 +35,8 @@ No VPC is involved: Lambda reaches DynamoDB and the internet directly.
 
 Today the backend runs on Render, the site on Netlify, and `konforme.io` DNS is Netlify DNS.
 DNS stays on Netlify: Terraform prints the records to add there (`terraform output dns_records`).
+Until `use_custom_domains = true`, the stack runs on AWS's own URLs (`terraform output api_url app_url`),
+so it can be built and tested before touching DNS.
 Nothing user-facing changes until step 6.
 
 ### 1. Prerequisites (once)

@@ -38,8 +38,9 @@ jobs:
       id-token: write
       contents: read
     env:
-      TF_VAR_lambda_image_tag: ${{ vars.TF_VAR_LAMBDA_IMAGE_TAG }}
-      TF_VAR_cutover_to_lambda: ${{ vars.TF_VAR_CUTOVER_TO_LAMBDA }}
+      TF_VAR_lambda_image_tag: ${{ vars.TF_VAR_LAMBDA_IMAGE_TAG || 'bootstrap-1' }}
+      TF_VAR_cutover_to_lambda: ${{ vars.TF_VAR_CUTOVER_TO_LAMBDA || 'false' }}
+      TF_VAR_use_custom_domains: ${{ vars.TF_VAR_USE_CUSTOM_DOMAINS || 'false' }}
       TF_VAR_budget_alert_email: ${{ vars.TF_VAR_BUDGET_ALERT_EMAIL }}
       TF_VAR_secret_key: ${{ secrets.TF_VAR_SECRET_KEY }}
       TF_VAR_encryption_key: ${{ secrets.TF_VAR_ENCRYPTION_KEY }}
@@ -49,6 +50,7 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.15.3
+          terraform_wrapper: false
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
@@ -56,3 +58,8 @@ jobs:
       - run: terraform init -input=false
       - run: terraform plan -input=false -out=tfplan
       - run: terraform apply -input=false tfplan
+      - name: Smoke test
+        run: |
+          API_URL="$(terraform output -raw api_url)"
+          echo "API: $API_URL"
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$API_URL/health"

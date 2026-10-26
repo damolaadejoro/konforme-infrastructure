@@ -68,6 +68,12 @@ variable "budget_limit_usd" {
 
 # --- Serverless stack ---
 
+variable "use_custom_domains" {
+  description = "Serve on api./app.<domain_name>. Needs the certificate check records added in Netlify DNS (terraform output dns_records). False = AWS's own URLs."
+  type        = bool
+  default     = false
+}
+
 variable "cutover_to_lambda" {
   description = "Set true once api/app DNS points at AWS: turns on the daily jobs and turns off the default API Gateway URL. Leave false until the data migration is done."
   type        = bool
