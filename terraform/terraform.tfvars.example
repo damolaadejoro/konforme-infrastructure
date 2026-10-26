@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+
+# MUST be the values the Render backend uses today (Render → backend service → Environment).
+# A new ENCRYPTION_KEY makes every stored customer cloud credential unreadable.
+secret_key     = ""
+encryption_key = ""
+
+# Image tag pushed by hand before the first apply (CI pushes all later ones)
+lambda_image_tag = "bootstrap-1"
+
+# Leave false until the data is copied and DNS points at AWS
+cutover_to_lambda = false
+
+resend_api_key     = "" # without it no emails are sent
+budget_alert_email = ""

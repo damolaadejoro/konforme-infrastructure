@@ -51,4 +51,4 @@ aws dynamodb create-table \
   --billing-mode PAY_PER_REQUEST \
   --region "$REGION"
 
-echo "=== Done! You can now run: cd infrastructure/terraform && terraform init ==="
+echo "=== Done! You can now run: cd terraform && terraform init ==="

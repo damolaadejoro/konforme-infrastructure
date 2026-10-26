@@ -54,6 +54,7 @@ resource "aws_s3_bucket_policy" "frontend" {
 
 # CloudFront requires its certificate in us-east-1
 resource "aws_acm_certificate" "app" {
+  count             = var.use_custom_domains ? 1 : 0
   provider          = aws.us_east_1
   domain_name       = local.app_fqdn
   validation_method = "DNS"
@@ -63,23 +64,12 @@ resource "aws_acm_certificate" "app" {
   }
 }
 
-resource "aws_route53_record" "app_cert_validation" {
-  for_each = {
-    for o in aws_acm_certificate.app.domain_validation_options : o.domain_name => o
-  }
-
-  zone_id         = data.aws_route53_zone.main.zone_id
-  name            = each.value.resource_record_name
-  type            = each.value.resource_record_type
-  records         = [each.value.resource_record_value]
-  ttl             = 300
-  allow_overwrite = true
-}
-
+# DNS is on Netlify: add the record from `terraform output dns_records` there.
+# Terraform waits here until AWS sees it.
 resource "aws_acm_certificate_validation" "app" {
-  provider                = aws.us_east_1
-  certificate_arn         = aws_acm_certificate.app.arn
-  validation_record_fqdns = [for r in aws_route53_record.app_cert_validation : r.fqdn]
+  count           = var.use_custom_domains ? 1 : 0
+  provider        = aws.us_east_1
+  certificate_arn = aws_acm_certificate.app[0].arn
 }
 
 # Same security headers the site had on Netlify, with the API added to connect-src
@@ -94,7 +84,7 @@ resource "aws_cloudfront_response_headers_policy" "frontend" {
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: https:",
         "font-src 'self' data:",
-        "connect-src 'self' https://${local.api_fqdn}",
+        "connect-src 'self' ${local.api_url}",
         "frame-ancestors 'none'",
         "base-uri 'self'",
         "form-action 'self'",
@@ -143,7 +133,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   is_ipv6_enabled     = true
   default_root_object = "index.html"
   price_class         = "PriceClass_100"
-  aliases             = [local.app_fqdn]
+  aliases             = var.use_custom_domains ? [local.app_fqdn] : []
   comment             = "${local.name_prefix} frontend"
 
   origin {
@@ -184,8 +174,9 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   viewer_certificate {
-    acm_certificate_arn      = aws_acm_certificate_validation.app.certificate_arn
-    ssl_support_method       = "sni-only"
-    minimum_protocol_version = "TLSv1.2_2021"
+    cloudfront_default_certificate = !var.use_custom_domains
+    acm_certificate_arn            = var.use_custom_domains ? aws_acm_certificate_validation.app[0].certificate_arn : null
+    ssl_support_method             = var.use_custom_domains ? "sni-only" : null
+    minimum_protocol_version       = var.use_custom_domains ? "TLSv1.2_2021" : "TLSv1"
   }
 }

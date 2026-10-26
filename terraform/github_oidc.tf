@@ -2,9 +2,9 @@
 # Replaces the konforme-gitlab-ci IAM user.
 
 variable "create_github_oidc_provider" {
-  description = "Set false if the account already has the token.actions.githubusercontent.com provider"
+  description = "True only if the account has no token.actions.githubusercontent.com provider yet (account 629229067229 already has one)"
   type        = bool
-  default     = true
+  default     = false
 }
 
 resource "aws_iam_openid_connect_provider" "github" {

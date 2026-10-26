@@ -28,35 +28,7 @@ variable "app_subdomain" {
   default     = "app"
 }
 
-variable "instance_type" {
-  description = "EC2 instance type"
-  type        = string
-  default     = "t3.small"
-}
-
-variable "root_volume_size" {
-  description = "Root EBS volume size in GB"
-  type        = number
-  default     = 20
-}
-
-variable "data_volume_size" {
-  description = "Postgres data EBS volume size in GB"
-  type        = number
-  default     = 20
-}
-
-variable "admin_cidr_blocks" {
-  description = "CIDR blocks allowed SSH access"
-  type        = list(string)
-}
-
-variable "ssh_key_name" {
-  description = "Name of the EC2 key pair for SSH access"
-  type        = string
-}
-
-# --- Application secrets (stored in SSM) ---
+# --- Application secrets ---
 
 variable "secret_key" {
   description = "FastAPI SECRET_KEY (>= 32 chars)"
@@ -70,15 +42,10 @@ variable "encryption_key" {
   sensitive   = true
 }
 
-variable "postgres_password" {
-  description = "PostgreSQL password"
-  type        = string
-  sensitive   = true
-}
-
 variable "konforme_aws_account_id" {
-  description = "AWS Account ID where Konforme runs (for STS AssumeRole trust)"
+  description = "AWS account customers trust in their KonformeAuditRole (empty = the account Terraform deploys to)"
   type        = string
+  default     = ""
 }
 
 variable "allowed_origins" {
@@ -101,8 +68,14 @@ variable "budget_limit_usd" {
 
 # --- Serverless stack ---
 
+variable "use_custom_domains" {
+  description = "Serve on api./app.<domain_name>. Needs the certificate check records added in Netlify DNS (terraform output dns_records). False = AWS's own URLs."
+  type        = bool
+  default     = false
+}
+
 variable "cutover_to_lambda" {
-  description = "Point api/app DNS at API Gateway/CloudFront and enable the daily jobs. Leave false until the data migration is done."
+  description = "Set true once api/app DNS points at AWS: turns on the daily jobs and turns off the default API Gateway URL. Leave false until the data migration is done."
   type        = bool
   default     = false
 }

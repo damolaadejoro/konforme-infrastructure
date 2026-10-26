@@ -1,20 +1,3 @@
-# --- CloudWatch Log Groups ---
-
-resource "aws_cloudwatch_log_group" "backend" {
-  name              = "/${var.project_name}/backend"
-  retention_in_days = 14
-}
-
-resource "aws_cloudwatch_log_group" "nginx" {
-  name              = "/${var.project_name}/nginx"
-  retention_in_days = 14
-}
-
-resource "aws_cloudwatch_log_group" "postgres" {
-  name              = "/${var.project_name}/postgres"
-  retention_in_days = 14
-}
-
 # --- Budget Alarm ---
 
 resource "aws_budgets_budget" "monthly" {
