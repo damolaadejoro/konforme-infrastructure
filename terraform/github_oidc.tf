@@ -7,6 +7,12 @@ variable "create_github_oidc_provider" {
   default     = false
 }
 
+variable "github_owner_id" {
+  description = "Numeric GitHub id of github_owner (used in immutable OIDC subjects)"
+  type        = string
+  default     = "141401066"
+}
+
 resource "aws_iam_openid_connect_provider" "github" {
   count          = var.create_github_oidc_provider ? 1 : 0
   url            = "https://token.actions.githubusercontent.com"
@@ -21,12 +27,20 @@ data "aws_iam_openid_connect_provider" "github" {
 locals {
   github_oidc_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
 
-  # subject = the only GitHub context allowed to assume each role
+  # The only GitHub context allowed to assume each role
   github_roles = {
-    backend  = "repo:${var.github_owner}/${var.github_backend_repo}:ref:refs/heads/main"
-    frontend = "repo:${var.github_owner}/${var.github_frontend_repo}:ref:refs/heads/main"
+    backend  = { repo = var.github_backend_repo, context = "ref:refs/heads/main" }
+    frontend = { repo = var.github_frontend_repo, context = "ref:refs/heads/main" }
     # Requires the workflow job to use `environment: production` (set up approvals there)
-    infra = "repo:${var.github_owner}/${var.github_infra_repo}:environment:production"
+    infra = { repo = var.github_infra_repo, context = "environment:production" }
+  }
+
+  # These repos send "immutable" subjects (owner@id/repo@id); accept the plain form too.
+  # IDs: gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+  github_repo_ids = {
+    (var.github_backend_repo)  = "1415695082"
+    (var.github_frontend_repo) = "1415653291"
+    (var.github_infra_repo)    = "1415665232"
   }
 }
 
@@ -45,7 +59,10 @@ resource "aws_iam_role" "github" {
         Condition = {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-            "token.actions.githubusercontent.com:sub" = each.value
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:${var.github_owner}/${each.value.repo}:${each.value.context}",
+              "repo:${var.github_owner}@${var.github_owner_id}/${each.value.repo}@${local.github_repo_ids[each.value.repo]}:${each.value.context}",
+            ]
           }
         }
       }
